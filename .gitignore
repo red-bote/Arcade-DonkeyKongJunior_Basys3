@@ -37,3 +37,12 @@ c5_pin_model_dump.txt
 *.xml
 *_netlist
 *.cdf
+
+# Basys3 port (Vivado) -- pristine Quartus entries above retained.
+basys3/
+roms/
+proms/
+__pycache__/
+*.jou
+*.log
+*.tcl.bak

@@ -129,13 +129,12 @@ ram_2N U_2N(
 
 //    Parts  2M
 reg    [3:0]O_COL;
+reg    prev;
 //always@(negedge CLK_2M) O_COL[3:0] <= W_2N_DO[3:0];
 
 // Delay added to colour output. Temporary fix for colour timing issue.
 // Further investigation needed.
 always@(negedge I_H_CNT[0]) begin
-
-	reg prev;
 
 	prev <= CLK_2M;
 

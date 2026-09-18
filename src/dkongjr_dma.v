@@ -30,10 +30,10 @@ reg [9:0]DMA_ASr;
 reg [9:0]DMA_ADr;
 reg [7:0]DMA_DDr;
 reg DMA_CESr, DMA_CEDr;
+reg old_trig;
 
 always @(posedge I_CLK)
 begin
-	reg old_trig;
 
 	old_trig <= I_DMA_TRIG;
 
