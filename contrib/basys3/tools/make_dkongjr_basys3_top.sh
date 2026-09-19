@@ -170,8 +170,6 @@ architecture struct of dkongjr_basys3 is
  -- audio
  signal audio_16       : std_logic_vector(15 downto 0);
  signal audio_u8       : std_logic_vector(7 downto 0);
- signal audio_u8_att   : std_logic_vector(7 downto 0);
- signal pwm_accumulator : std_logic_vector(8 downto 0) := (others => '0');
 
 begin
 
@@ -335,28 +333,29 @@ begin
  vgaVsync <= vsync_x2;
 
  ---------------------------------------------------------------------------
- -- Audio: 9-bit PWM accumulator (8-bit unsigned in, MSB tap) -> PmodAMP2,
- -- the repo-wide idiom. O_SOUND_DAT is signed 16-bit (unlike every other
- -- port's 8-bit-unsigned source); convert by sign-bit inversion +
- -- truncation to the top 8 bits (PORTING_SPEC.md section 13).
+ -- Audio: XAPP154-style delta-sigma DAC (10-bit accumulator reset to
+ -- mid-scale; dac.vhd from contrib/basys3/rtl/) -> PmodAMP2. O_SOUND_DAT
+ -- is signed 16-bit (unlike every other port's 8-bit-unsigned source);
+ -- convert by sign-bit inversion + truncation to the top 8 bits
+ -- (PORTING_SPEC.md section 13).
  --
- -- The core hard-limits sound_mix to +/-16-bit at line 814-819 of
- -- dkongjr_top.v, so O_SOUND_DAT peaks at full scale. Full-scale PWM was
- -- audibly overdriven on hardware; attenuate by one divide-by-2 on the
- -- biased value (audio_u8 >> 1 + 64 keeps the 50% zero-duty center and
- -- halves the swing, = 128 + floor(audio/512)) -- -6 dB.
+ -- Audio-variant C: exact replica of the other/donkey-kong-fpga output
+ -- stage -- the delta-sigma DAC clocked at 24.576 MHz (clock_24576) and
+ -- fed full-scale audio_u8 (0..255), no attenuation.
  ---------------------------------------------------------------------------
  audio_u8 <= (not audio_16(15)) & audio_16(14 downto 8);
- audio_u8_att <= ('0' & audio_u8(7 downto 1)) + 64;  -- half-scale, same center
 
- process(clock_12288)
- begin
-  if rising_edge(clock_12288) then
-   pwm_accumulator <= ('0' & pwm_accumulator(7 downto 0)) + (audio_u8_att & '0');
-  end if;
- end process;
+ audio_dac : entity work.dac
+ generic map(
+  msbi_g => 7
+ )
+ port map(
+  clk_i   => clock_24576,
+  res_n_i => reset_n,
+  dac_i   => audio_u8,
+  dac_o   => O_PMODAMP2_AIN
+ );
 
- O_PMODAMP2_AIN   <= pwm_accumulator(8);
  O_PMODAMP2_SHUTD <= sw(14);  -- shutdown: 0 = enable
  O_PMODAMP2_GAIN  <= sw(15);  -- 0 = 12 dB, 1 = 6 dB
 

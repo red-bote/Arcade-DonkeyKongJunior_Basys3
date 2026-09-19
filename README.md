@@ -83,3 +83,10 @@ it is not MAME ROM content.
 Scripted and staged; not yet synthesised or hardware-verified in this
 fork. IO/audio/video decisions follow the proven sibling port. See repo
 status for the current per-port record.
+
+## Music synthesis
+
+Music synthesis output stage is provided by an XAPP154-style delta-sigma DAC (`contrib/basys3/rtl/
+dac.vhd`, 10-bit accumulator reset to mid-scale) clocked at 24.576 MHz
+(`clock_24576`) and fed full-scale 8-bit `audio_u8`.
+
