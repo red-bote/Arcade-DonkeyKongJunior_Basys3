@@ -7,12 +7,13 @@ convention (own git tree, `Makefile` + `contrib/`, non-nested
 `basys3/dkongjr_basys3.xpr`).
 
 This fork vendors the pristine MiSTer core directly at the repo top level
-(`src/`, `sys/`, `releases/`, root `dpram.vhd`); the sibling
-`gaz88/DonkeyKongJr_DeMiSTified` is a hardware-verified reference port of the
-same core and is read as a proven oracle for wrapper/IO/audio decisions --
-see §10. Where this port reuses an interface idiom of that sibling, it
+(`src/` wholesale, one data file from `releases/` (`dkj_wave.bin`), and the
+root `dpram.vhd` vendored but unimported -- see §3/§12); gaz68 also maintains
+a DeMiSTified Donkey Kong Junior port (its own upstream repo, driven from the
+same core) that is read as a proven oracle for wrapper/IO/audio decisions --
+see §10. Where this port reuses an interface idiom of that reference, it
 re-derives it against the pristine RTL in this tree rather than copying the
-sibling's implementation, so both ports stay independently maintainable.
+reference's implementation, so the port stays independently maintainable.
 
 This port is one of the confirmed examples generalized into
 `.opencode/skills/port-mister-machine/SKILL.md` (the "separable core, thin
@@ -38,11 +39,11 @@ dn_wr` download bus, VGA-level RGB/sync outputs, `O_SOUND_DAT`). The port
 vendors `src/` plus one data file (`releases/dkj_wave.bin`), not the
 Quartus/MiSTer framework files -- see §12 -- and authors its own
 `dkongjr_basys3` wrapper, exactly as the DigDug/Mappy/Xevious ports exclude
-their pristine top and author their own. A Basys 3 port of this core already
-exists in this repo (`gaz88/DonkeyKongJr_DeMiSTified`); this fork is a
-distinct, from-scratch porting effort against the same upstream core, built
-to this repository's `port-mister-machine` skill with the sibling consulted
-as reference only (see §10).
+their pristine top and author their own. gaz68's upstream DeMiSTified Donkey
+Kong Junior port is consulted as a proven reference for wrapper/IO/audio
+decisions; this fork is a distinct, from-scratch porting effort against the
+same pristine MiSTer core, built to this repository's `port-mister-machine`
+skill (see §10).
 
 ## 2. ROM sourcing: single drop-in `dkongjr_rom` module, not a per-region split
 
@@ -139,6 +140,21 @@ the mix volume per the pristine `dkongjr_wav_sound.v` case table (`4`=OFF,
 `I_ANLG_VOL` from `sw(11 downto 8)`, giving the switches direct control over
 this non-linear volume encoding (see §8) rather than tying it to a fixed
 value.
+
+**Output stage.** The mixed signed 16-bit `O_SOUND_DAT` reaches the board as
+digital audio. The wrapper forms `audio_u8 <= (not audio_16(15)) &
+audio_16(14 downto 8)` -- sign-bit inversion plus truncation, the repo's
+standard signed-to-unsigned mix idiom -- and feeds it full-scale (0..255, no
+attenuation) into an XAPP154-app-note-style 1-bit delta-sigma DAC
+(`contrib/basys3/rtl/dac.vhd`, 10-bit accumulator reset to mid-scale)
+instantiated as `audio_dac : entity work.dac` with `clk_i => clock_24576`
+(the core clock, 24.576 MHz), `res_n_i => reset_n`, driving
+`O_PMODAMP2_AIN`/`O_PMODAMP2_GAIN`/`O_PMODAMP2_SHUTD` at JC (`sw14` =
+shutdown, `sw15` = gain). This replaces an earlier 9-bit PWM-accumulator
+output stage; `dac.vhd` follows the precedent output stage of d18c7db's
+Donkey Kong FPGA port (the Degawa-Verilog-to-VHDL translation by Alex,
+https://github.com/d18c7db/donkey-kong-fpga, GPL-3.0) -- the XAPP154
+delta-sigma DAC authored by Armin Laeuger (per the file's `$Id` header).
 
 `dkj_wave.bin` (the flat, 16-bit little-endian PCM sample data feeding
 `wav_mem`) stays vendored at `releases/dkj_wave.bin`. Unlike the MAME
@@ -309,11 +325,12 @@ on-disk `~/roms/dkong.z*` files (`dkongjr.zip`, `dkong.zip`) are the plain
 Donkey Kong romset -- unrelated to this port, same situation documented in
 the sibling port's spec.
 
-The sibling `gaz88/DonkeyKongJr_DeMiSTified` uses the identical 13-member
-renamed layout, and its generated `proms/dkongjr_roms.v` was byte-compared
-during this port's bring-up: the value sets are identical (only header
-comment formatting differs). The sibling is otherwise treated as a reviewed
-design oracle for §7/§8/§12 decisions, not a source to be copied from -- the
+The identical 13-member
+renamed layout is used by gaz68's DeMiSTified Donkey Kong Junior port, and
+its generated ROM module was byte-compared during this port's bring-up: the
+value sets are identical (only header comment formatting differs). That
+reference is otherwise treated as a reviewed design oracle for §7/§8/§12
+decisions, not a source to be copied from -- the
 wrapper, scripts, and docs in this tree are authored fresh.
 
 `AGENTS.md` at the repo root describes `dkong_sound_samples/` staging both
@@ -398,7 +415,9 @@ assumed:
 4. The `clk_wiz_0` requested-vs-achieved frequency (§6) is expected at
    ~24.574 MHz; the actual value is reported by `make clk_wiz` and should
    be read back before the first `make synth`.
-5. The PWM audio scaling for the signed 16-bit `O_SOUND_DAT` (sign-bit
-   inversion + truncation to reuse the standard 9-bit-accumulator idiom) and
-   the mixed digital+analogue sound path (§4) are unverified until hardware
-   bring-up -- volume breadth and clipping headroom are the unknowns.
+5. The delta-sigma output stage (§4) -- `dac.vhd` suitability at 24.576 MHz
+   (XAPP154 targets lower clock regimes), the sign-inversion + truncation of
+   the signed 16-bit `O_SOUND_DAT` into `audio_u8`, and the mixed
+   digital+analogue sound path -- is unverified until hardware bring-up;
+   volume breadth, clipping headroom, and the PMODAMP2 analog filtering
+   needed at JC are the unknowns.

@@ -1,58 +1,20 @@
-# Donkey Kong Junior (MiSTer-devel)
+# Donkey Kong Junior (Basys 3)
 
-Donkey Kong Junior arcade core ported to MiSTer by gaz68
-(https://github.com/gaz68), CPU/video RTL originally by Katsumi Degawa.
+Basys 3 (Artix-7 `xc7a35tcpg236-1`, Vivado 2020.2) port of gaz68's Donkey
+Kong Junior MiSTer core (https://github.com/gaz68), CPU/video RTL originally
+by Katsumi Degawa. This fork vendors the pristine MiSTer `src/` core
+directly (no `hps_io`/OSD/HDMI framework) and wraps it in this repo's own
+Basys 3 conventions. Implementation detail -- clocking, ROM map, RAM
+portability, input/DIP decoding, project-import subtleties, and the
+unresolved empirical risks -- lives in `PORTING_SPEC.md`; this README is the
+outward view.
 
-## Basys3 port
-
-Basys3 (Artix-7 `xc7a35tcpg236-1`) port of `dkongjr_top` (the core proper,
-already free of the MiSTer HPS/OSD/HDMI framework). The pristine `src/` is
-untouched here (aside from two tracked synthesis-fix patches, below); the
-Vivado project imports `src/` minus a dead-code alternate CPU IP
-(`fz80_ip/`, `z80ip_f.v`, never built upstream), a duplicate-entity file
-(`t80asd_ip/T80_RegX.vhd`), and the pristine `dkongjr_rom.v` (replaced by a
-generated drop-in module). ROMs are generated at `make setup` time into a
-single `proms/dkongjr_roms.v` (one module, byte-identical port list to the
-pristine `dkongjr_rom.v`: a flat 64 KiB program/graphics/sound-table ROM
-plus a 96 KiB wave-sample ROM) by the host-side Python generator
-`contrib/tools/make_dkongjr_roms.py` (no gcc needed). The pristine
-`dpram.vhd` (Altera `altsyncram`) is replaced by a portable dual-port RAM,
-`contrib/basys3/rtl/dpram.vhd`. The wrapper `dkongjr_basys3` (authored by
-`make patch`) adds MMCM clocking, an independent PS/2 keyboard clock, an
-8-stage H-blank delay match, the vendored MiST-style scandoubler, PMODA
-joystick + keyboard input, and a PWM audio path. See `PORTING_SPEC.md` for
-full design intent, including the unresolved empirical-verification items
-(video blanking depth, DIP mapping, RAM timing, audio scaling, wave-sample
-audio). The sibling `gaz88/DonkeyKongJr_DeMiSTified` is a hardware-verified
-port of the same core; where this port reuses an interface decision from
-it, the choice is re-derived against the pristine RTL in this tree (see
-`PORTING_SPEC.md` section 10).
-
-**Audio scope**: both sound sources are included -- the primary
-chip-driven sound (i8035/T48 sound CPU) and the four PCM sample channels
-(walk/climb/jump/land/fall, from the vendored `releases/dkj_wave.bin`,
-open-source data, not MAME ROM content). Sample mix volume is
-switch-selectable (`sw[11:8]`). See `PORTING_SPEC.md` section 4.
-
-**Synthesis fixes** (`contrib/code/*.patch`, applied idempotently by
-`setup_dkongjr.sh`): two Vivado 2020.2 Verilog-parser rejections (Synth
-8-1873, local `reg` declared in an unnamed `begin`/`end` block) in
-`dkongjr_dma.v` and `dkongjr_vram.v`. See `PORTING_SPEC.md` section 11.
-Verify: `grep -c "reg old_trig;$" src/dkongjr_dma.v` and
-`grep -c "reg    prev;$" src/dkongjr_vram.v` should each report `1`
-(module-scope, not inside the `always` block).
-
-`create_project.sh` imports `.sv` alongside `.vhd`/`.v` -- `dkongjr_dac.sv`
-is the one SystemVerilog file in the vendored tree and is silently dropped
-by a `.vhd`/`.v`-only glob. Verify:
-`find src -name '*.sv'` should list `dkongjr_dac.sv`, and after
-`make create_prj` the project should contain it (Vivado Tcl:
-`llength [get_files -quiet *dkongjr_dac.sv]` should report `1`).
+## Build
 
 Build from this directory (see `make help`):
 
-    make setup        # stage romset + generate proms/dkongjr_roms.v
-    make create_prj    # create Vivado project (imports src/ minus dead-code CPU alt + proms)
+    make setup         # stage romset + generate proms/dkongjr_roms.v
+    make create_prj    # create Vivado project
     make clk_wiz       # generate clk_wiz_0 MMCM IP (100 -> 24.576 MHz)
     make patch         # author dkongjr_basys3.vhd top level
     make bitstream     # implementation + write_bitstream (runs synth first)
@@ -72,21 +34,50 @@ it is not MAME ROM content.
 | 2P start | `btnR` | |
 | joystick up/down/left/right/fire | PMODA `JA[3]/JA[2]/JA[1]/JA[0]/JA[4]` | active-low; OR-merged with the keyboard |
 | PS/2 keyboard | onboard USB HID (`ps2_dat`/`ps2_clk`, B17/C17) | arrows + Ctrl/Space (fire), 1/2 (start), 5 (coin) |
-| DIP switches | `sw[7:0]` | cabinet (`sw7`), bonus (`sw3:2`), lives (`sw1:0`) -- see PORTING_SPEC.md section 8 |
-| wave-sample volume | `sw[11:8]` | non-linear encoding: `4`=OFF, `5`-`10`=10%-60%, `0`=70%, `1`=80%, `2`=90%, `3`=100% -- see PORTING_SPEC.md section 4 |
-| audio PWM | `O_PMODAMP2_AIN/GAIN/SHUTD` (JC) | `sw14` = shutdown, `sw15` = gain |
+| DIP switches | `sw[7:0]` | cabinet (`sw7`), bonus (`sw3:2`), lives (`sw1:0`) -- see `PORTING_SPEC.md` section 8 |
+| wave-sample volume | `sw[11:8]` | non-linear encoding: `4`=OFF, `5`-`10`=10%-60%, `0`=70%, `1`=80%, `2`=90%, `3`=100% -- see `PORTING_SPEC.md` section 4 |
+| audio out | `O_PMODAMP2_AIN/GAIN/SHUTD` (JC) | delta-sigma DAC output; `sw14` = shutdown, `sw15` = gain |
 | VGA | `vgaRed/vgaGreen/vgaBlue[3:0]`, `Hsync`, `Vsync` | 4-4-4 RGB |
 | debug | `led[0]` | MMCM lock indicator |
 
+## Audio
+
+Both sound sources are included: the primary chip-driven sound (i8035/T48
+sound CPU with on-chip DAC + IIR low-pass filter) and the four PCM sample
+channels (walk/climb/jump/land/fall, from the vendored
+`releases/dkj_wave.bin`, open-source data). Sample mix volume is
+switch-selectable (`sw[11:8]`). The output stage is an XAPP154-style
+delta-sigma DAC (`contrib/basys3/rtl/dac.vhd`) clocked at 24.576 MHz and fed
+the full-scale 8-bit mix (`audio_u8`), driving the PMODAMP2 board at JC. See
+`PORTING_SPEC.md` section 4.
+
+## Patches and files added
+
+| File | Added for | Origin | Spec |
+|---|---|---|---|
+| `contrib/code/dkongjr_dma_synth_fix.patch`, `dkongjr_vram_synth_fix.patch` | move a local `reg` out of an unnamed block (Vivado 2020.2 rejects it, Synth 8-1873); applied idempotently by `setup_dkongjr.sh` | authored for this port | section 11 |
+| `proms/dkongjr_roms.v` (generated, never committed) | single drop-in `dkongjr_rom` module: 64 KiB program/graphics/sound-table ROM + 96 KiB wave ROM baked to BRAM (no gcc) | generated by `contrib/tools/make_dkongjr_roms.py` (pure Python), modeled on TangNano20K-DigDug's `make_digdug_roms.py` | sections 2/9/10 |
+| `contrib/basys3/rtl/dpram.vhd` | portable dual-port RAM replacing the pristine Altera `dpram.vhd` (`altsyncram`); entity/port-compatible, Vivado-inferred | authored for this repo | section 3 |
+| `contrib/basys3/rtl/io_ps2_keyboard.vhd`, `kbd_joystick.vhd` | PS/2 keyboard decode (the pristine core has none) | vendored from TangNano20K-DigDug; `io_ps2_keyboard` from Peter Wendrich's FPGA64 | sections 8/12 |
+| `contrib/basys3/rtl/scandoubler_new.v` | MiST-style scandoubler | vendored from the TangNano20K-DigDug/EBAZ4205-Mappy/DE2-Xevious family (Till Harbaum) | sections 7/12 |
+| `contrib/basys3/rtl/dac.vhd` | XAPP154-style delta-sigma audio output stage | XAPP154 delta-sigma DAC (A. Laeuger); from d18c7db's donkey-kong-fpga (<https://github.com/d18c7db/donkey-kong-fpga>, `source/dac.vhd`) | section 4 |
+| `contrib/basys3/vivado/Basys-3-Master.xdc` | board constraints | Digilent's official Basys-3 constraints | -- |
+| `contrib/tools/setup_dkongjr.sh`, `prep_roms.sh`, `make_dkongjr_basys3_top.sh`, `make_dkongjr_basys3_bitstream.sh`, `contrib/basys3/vivado/create_project.sh`, `make_clk_wiz_0.sh` | machine driver: stage/setup, ROM prep, wrapper + bitstream, project creation, clock IP | authored for this port per the repo's Dar-convention patterns; the wrapper is generated by `make patch`, never hand-edited | section 12 |
+| `basys3/` Vivado project + `clk_wiz_0` MMCM IP | project + 100 -> 24.576 MHz clocking | generated by `make create_prj` / `make clk_wiz`, not committed | section 6 |
+
+## Credits
+
+- <https://github.com/d18c7db/donkey-kong-fpga> (GPL-3.0) -- Donkey Kong FPGA
+  port in VHDL by Alex from Katsumi Degawa's Verilog; the precedent source
+  for this port's `dac.vhd` audio output stage (`source/dac.vhd`).
+- Armin Laeuger -- the XAPP154 delta-sigma DAC implemented by `dac.vhd`
+  (per its `$Id: ... arnim Exp $` header).
+- gaz68 -- Donkey Kong Junior MiSTer core; CPU/video RTL originally by
+  Katsumi Degawa.
+- Peter Wendrich (FPGA64) -- `io_ps2_keyboard.vhd`; MiST project --
+  `kbd_joystick.vhd`; Till Harbaum -- `scandoubler_new.v`.
+
 ## Status
 
-Scripted and staged; not yet synthesised or hardware-verified in this
-fork. IO/audio/video decisions follow the proven sibling port. See repo
-status for the current per-port record.
-
-## Music synthesis
-
-Music synthesis output stage is provided by an XAPP154-style delta-sigma DAC (`contrib/basys3/rtl/
-dac.vhd`, 10-bit accumulator reset to mid-scale) clocked at 24.576 MHz
-(`clock_24576`) and fed full-scale 8-bit `audio_u8`.
-
+Scripted and staged; not yet synthesised or hardware-verified. See the
+top-level README for the current per-port status record.
